@@ -24,7 +24,7 @@
             * It is important to point out that those hypervisors can give you access to the virtual machine sitting on the server. That means that you have security in terms of sharing a resources with other clients, but the company that is hosting your data still have access to it.
 
     * `DNS`
-        * `Round Robing`: Set a list of IPs to cycle whenever resolving the domain
+        * `Round Robin`: Set a list of IPs to cycle whenever resolving the domain
         * `TTL`: time to live for the cache for that domain resolution 
 
     * `Load Balancers`
