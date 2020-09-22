@@ -121,7 +121,7 @@
 
             * Cookies and local storage serve different purposes. Cookies are primarily for reading server-side, local storage can only be read by the client-side. So the question is, in your app, who needs this data — the client or the server
 
-            * ![storage_compare](./images/storages.png)
+            * ![storage_compare](./images/storages.PNG)
 
             * How to store tokens for Mobile apps
                 * Well, there are different places this token should be stored depending on what platform you’re developing against. If you’re writing an Android app, for instance, you’ll want to store all access tokens in SharedPreferences (here’s the API docs you need to make it work). If you’re an iOS developer, you will want to store your access tokens in the Keychain.
@@ -350,7 +350,7 @@ Next, we'll look at high-level trade-offs:
 
     * CAP theorem
 
-        * ![cap](./images/cap.png) 
+        * ![cap](./images/cap.PNG) 
     
     * In a distributed computer system, you can only support two of the following guarantees:
 
@@ -726,17 +726,17 @@ Next, we'll look at high-level trade-offs:
 
         * Imagine we mapped the hash output range onto the edge of a circle. That means that the minimum possible hash value, zero, would correspond to an angle of zero, the maximum possible value (some big integer we’ll call INT_MAX) would correspond to an angle of 2𝝅 radians (or 360 degrees), and all other hash values would linearly fit somewhere in between. So, we could take a key, compute its hash, and find out where it lies on the circle’s edge. Assuming an INT_MAX of 1010 (for example’s sake), the keys from our previous example would look like this:
         
-        * ![consistent-hashing-1](./images/consistent-hashing-1.png)
+        * ![consistent-hashing-1](./images/consistent-hashing-1.PNG)
 
         * Now imagine we also placed the servers on the edge of the circle, by pseudo-randomly assigning them angles too. This should be done in a repeatable way (or at least in such a way that all clients agree on the servers’ angles). A convenient way of doing this is by hashing the server name (or IP address, or some ID)—as we’d do with any other key—to come up with its angle.
 
         * In our example, things might look like this:
 
-            * ![consistent-hashing-2](./images/consistent-hashing-2.png)
+            * ![consistent-hashing-2](./images/consistent-hashing-2.PNG)
         
         * Since we have the keys for both the objects and the servers on the same circle, we may define a simple rule to associate the former with the latter: Each object key will belong in the server whose key is closest, in a counterclockwise direction (or clockwise, depending on the conventions used). In other words, to find out which server to ask for a given key, we need to locate the key on the circle and move in the ascending angle direction until we find a server.
 
-            * ![consistent-hashing-3](./images/consistent-hashing-3.png)
+            * ![consistent-hashing-3](./images/consistent-hashing-3.PNG)
         
         * From a programming perspective, what we would do is keep a sorted list of server values (which could be angles or numbers in any real interval), and walk this list (or use a binary search) to find the first server with a value greater than, or equal to, that of the desired key. If no such value is found, we need to wrap around, taking the first one from the list.
 
@@ -744,20 +744,20 @@ Next, we'll look at high-level trade-offs:
 
         * For our example we’ll assume all three servers have an equal weight of 10 (this works well for three servers, for 10 to 50 servers, a weight in the range 100 to 500 would work better, and bigger pools may need even higher weights):
 
-            * ![consistent-hashing-4](./images/consistent-hashing-4.png)
+            * ![consistent-hashing-4](./images/consistent-hashing-4.PNG)
 
 
         * So, what’s the benefit of all this circle approach? Imagine server C is removed. To account for this, we must remove labels C0 .. C9 from the circle. This results in the object keys formerly adjacent to the deleted labels now being randomly labeled Ax and Bx, reassigning them to servers A and B.
 
         * But what happens with the other object keys, the ones that originally belonged in A and B? Nothing! That’s the beauty of it: The absence of Cx labels does not affect those keys in any way. So, removing a server results in its object keys being randomly reassigned to the rest of the servers, leaving all other keys untouched:
 
-            * ![consistent-hashing-5](./images/consistent-hashing-5.png)
+            * ![consistent-hashing-5](./images/consistent-hashing-5.PNG)
 
-            * ![consistent-hashing-6](./images/consistent-hashing-6.png)
+            * ![consistent-hashing-6](./images/consistent-hashing-6.PNG)
 
         * Something similar happens if, instead of removing a server, we add one. If we wanted to add server D to our example (say, as a replacement for C), we would need to add labels D0 .. D9. The result would be that roughly one-third of the existing keys (all belonging to A or B) would be reassigned to D, and, again, the rest would stay the same:
 
-            * ![consistent-hashing-7](./images/consistent-hashing-7.png)
+            * ![consistent-hashing-7](./images/consistent-hashing-7.PNG)
 
             * In general, only k/N keys need to be remapped when k is the number of keys and N is the number of servers (more specifically, the maximum of the initial and final number of servers).
     
@@ -1085,7 +1085,7 @@ Next, we'll look at high-level trade-offs:
 
     * A basic HTTP request consists of a verb (method) and a resource (endpoint). Below are common HTTP verbs:
 
-        * ![http-verbs](./images/http-verbs.png)
+        * ![http-verbs](./images/http-verbs.PNG)
 
         * HTTP is an application layer protocol relying on lower-level protocols such as TCP and UDP.
 
