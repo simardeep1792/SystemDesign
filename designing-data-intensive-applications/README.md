@@ -192,3 +192,58 @@
 
 * For a data structure like a résumé, which is mostly a self-contained document, a JSON representation can be quite appropriate: see Example 2-1. `JSON` has the appeal of being much simpler than `XML`. **Document-oriented databases like MongoDB [9], RethinkDB [10], CouchDB [11], and Espresso [12] support this data model**.
     * Some developers feel that the `JSON` model reduces the **impedance mismatch** between the application code and the storage layer. However, as we shall see in Chapter 4, there are also problems with JSON as a data encoding format. The lack of a schema is often cited as an advantage; we will discuss this in “Schema flexibility in the document model” on page 39.
+    * The `JSON` representation has **better locality than the multi-table schema** in Figure 2-1. If you want to fetch a profile in the relational example, you need to either perform multiple queries (query each table by user_id) or perform a messy multi- way join between the users table and its subordinate tables. In the **JSON representation, all the relevant information is in one place, and one query is sufficient.**
+
+### Many-to-One and Many-to-Many Relationships
+
+* If the user interface has free-text fields for entering the region and the industry, it makes sense to store them as plain-text strings. But there are advantages to having standardized lists of geographic regions and industries, and letting users choose from a drop-down list or autocompleter:
+    * Consistent style and spelling across profiles
+    * **Avoiding ambiguity** (e.g., if there are several cities with the same name)
+    * **Ease of updating** —the name is stored in only one place, so it is easy to update across the board if it ever needs to be changed (e.g., change of a city name due to political events)
+    * **Localization support** —when the site is translated into other languages, the standardized lists can be localized, so the region and industry can be displayed in the viewer’s language
+    * **Better search** —e.g., a search for philanthropists in the state of Washington can match this profile, because the list of regions can encode the fact that Seattle is in Washington (which is not apparent from the string "Greater Seattle Area")
+
+* The advantage of using an ID is that because it has no meaning to humans, it never needs to change: the ID can remain the same, even if the information it identifies changes. Anything that is meaningful to humans may need to change sometime in the future—and if that information is duplicated, all the redundant copies need to be updated. That incurs write overheads, and risks inconsistencies (where some copies of the information are updated but others aren’t).**Removing such duplication is the key idea behind normalization in databases.ii**
+
+* **If the database itself does not support joins, you have to emulate a join in application code by making multiple queries to the database.** (In this case, the lists of regions and industries are probably small and slow-changing enough that the application can simply keep them in memory. But nevertheless, the work of making the join is shifted from the database to the application code.)
+
+### Are Document Databases Repeating History?
+
+* While many-to-many relationships and joins are routinely used in relational data‐ bases, document databases and NoSQL reopened the debate on how best to represent such relationships in a database. **This debate is much older than NoSQL—in fact, it goes back to the very earliest computerized database systems.
+
+* The most popular database for business data processing in the 1970s was IBM’s `Information Management System (IMS)`, originally developed for `stock-keeping (SKU)` in the Apollo space program and first `commercially released in 1968` [13]. It is still in use and maintained today, `running on OS/390 on IBM mainframes` [14].
+    * A `stock-keeping unit (SKU)` is a scannable bar code, most often seen printed on product labels in a retail store. The label allows vendors to automatically track the movement of inventory. The SKU is composed of an alphanumeric combination of eight-or-so characters. The characters are a code that track the price, product details, and the manufacturer. SKUs may also be applied to intangible but billable products, such as units of repair time in an auto body shop or warranties.
+    *  When a customer buys an item at the `point-of-sale (POS)`, the `SKU` is scanned and the `POS system automatically removes the item from the inventory` as well as recording other data such as the sale price. SKUs should not be confused with model numbers, although businesses may embed model numbers within SKUs.
+
+* The design of `IMS` used a fairly simple data model called the **`hierarchical model`**, which has some remarkable similarities to the **`JSON model`** used by document databases [2]. It represented all data as a `tree of records nested within records`, much like the `JSON structure` of Figure 2-2.
+
+* Like `document databases`, `IMS` worked well for `one-to-many relationships`, but it **`made many-to-many relationships difficult`**, and it didn’t **support joins**. Developers had to decide whether to duplicate (denormalize) data or to manually resolve references from one record to another. These problems of the `1960s` and `70s` were very much like the problems that developers are running into with `document databases today` [15].
+
+* Various solutions were proposed to solve the limitations of the hierarchical model. The two most prominent were the `relational model (which became SQL, and took over the world)` and the `network model (which initially had a large following but eventually faded into obscurity)`. The “great debate” between these two camps lasted for much of the 1970s [2]. 
+
+### The network model
+
+* The `network model` was standardized by a committee called the `Conference on Data Systems Languages (CODASYL)` and implemented by several different database vendors; it is also known as the `CODASYL` model [16].
+
+* The `CODASYL` model was a **generalization of the hierarchical model**. In the `tree structure of the hierarchical model`, every record has exactly **one parent**; in the `network model`, a record could have **multiple parents**. For example, there could be one record for the "Greater Seattle Area" region, and every user who lived in that region could be linked to it. **This allowed many-to-one and many-to-many relationships to be modeled.**
+
+* The `links` between records in the `network model` were **not foreign keys**, but more `like pointers in a programming language` (while still being stored on disk). The only way of accessing a record was to `follow a path from a root record along these chains of links`. This was called an **`access path`**.
+    * In the simplest case, an `access path` could be like the `traversal of a linked list`: start at the `head of the list`, and look at one record at a time until you find the one you want. But in a world of `many-to-many relationships`, several `different paths can lead to the same record`, and a programmer working with the network model had to keep track of these different `access paths` in their head.
+
+* A query in `CODASYL` was performed by moving a `cursor through the database` by iterating over lists of records and following `access paths`. If a record had `multiple parents` (i.e., multiple incoming pointers from other records), the application code had to keep track of all the `various relationships`. Even `CODASYL` committee members admitted that this was like navigating around an `n-dimensional` data space [17].
+
+* Although `manual access path` selection was able to make the most efficient use of the very limited hardware capabilities in the `1970s` (such as tape drives, whose seeks are extremely slow), the problem was that they made the code for `querying and updating` the database `complicated and inflexible`. With both the `hierarchical and the network model`, if you **didn’t have a path to the data you wanted, you were in a difficult situation**. You could change the `access paths`, but then you had to go through a lot of `handwritten database query code` and rewrite it to handle the new `access paths`. It was difficult to make changes to an application’s data model.
+
+### The relational model
+
+* What the `relational model` did, by contrast, was to lay out all the data in the open: a `relation` (table) is simply a `collection of tuples` (rows), and that’s it. There are no labyrinthine nested structures, no complicated access paths to follow if you want to look at the data. You can read any or all of the rows in a table, selecting those that match an arbitrary condition. You can read a particular row by designating some columns as a key and matching on those. `You can insert a new row into any table without worrying about foreign key relationships to and from other tables`.iv
+
+* In a relational database, the query optimizer automatically decides which parts of the query to execute in which order, and which indexes to use. Those choices are effectively the `“access path,”` but the big difference is that they are **made automatically by the query optimizer**, not by the application developer, so we rarely need to think about them.
+    * If you want to query your data in new ways, you can just `declare a new index`, and queries will **automatically** use `whichever indexes are most appropriate`. You don’t need to change your queries to take advantage of a new index. (See also “Query Languages for Data” on page 42.) The relational model thus made it much easier to add new features to applications.
+    * But a key insight of the relational model was this: **you only need to build a query optimizer once, and then all applications that use the database can benefit from it**. If you don’t have a query optimizer, it’s easier to handcode the `access paths` for a particular query than to write a general-purpose optimizer—but the general-purpose solution wins in the long run.
+
+### Comparison to document databases
+
+* Document databases reverted back to the hierarchical model in one aspect: storing nested records (one-to-many relationships, like positions, education, and contact_info in Figure 2-1) within their parent record rather than in a separate table.
+
+* However, when it comes to representing many-to-one and many-to-many relation‐ ships, relational and document databases are not fundamentally different: in both cases, the related item is referenced by a unique identifier, which is called a foreign key in the relational model and a document reference in the document model [9]. **That identifier is resolved at read time by using a join or follow-up queries.** To date, document databases have not followed the path of CODASYL.
