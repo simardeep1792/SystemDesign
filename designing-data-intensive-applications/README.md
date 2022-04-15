@@ -246,4 +246,119 @@
 
 * Document databases reverted back to the hierarchical model in one aspect: storing nested records (one-to-many relationships, like positions, education, and contact_info in Figure 2-1) within their parent record rather than in a separate table.
 
-* However, when it comes to representing many-to-one and many-to-many relation‐ ships, relational and document databases are not fundamentally different: in both cases, the related item is referenced by a unique identifier, which is called a foreign key in the relational model and a document reference in the document model [9]. **That identifier is resolved at read time by using a join or follow-up queries.** To date, document databases have not followed the path of CODASYL.
+* However, when it comes to representing `many-to-one` and `many-to-many` relationships, relational and document databases are not fundamentally different: in both cases, the related item is referenced by a unique identifier, which is called a foreign key in the relational model and a document reference in the document model [9]. **That identifier is resolved at read time by using a join or follow-up queries.** To date, document databases have not followed the path of `CODASYL`.
+
+### Relational Versus Document Databases Today
+
+* There are many differences to consider when comparing relational databases to document databases, including their `fault-tolerance` properties (see Chapter 5) and `handling of concurrency` (see Chapter 7). In this chapter, we will concentrate only on the differences in the data model.
+
+* The main arguments in favor of the document data model are `schema flexibility`, **better performance due to locality**, and that for some applications it is closer to the data structures used by the application. The `relational model` counters by providing `better support for joins, and many-to-one and many-to-many relationships`.
+
+* The relational technique of **shredding**— splitting a document-like structure into multiple tables (like positions, education, and contact_info in Figure 2-1)—can lead to cumbersome schemas and unnecessarily complicated application code.
+
+* However, if your application does use `many-to-many` relationships, the document model becomes less appealing. It’s possible to reduce the need for joins by `denormalizing`, but then the application code needs to do additional work to keep the `denormalized` data consistent.
+
+* It’s not possible to say in general which data model leads to simpler application code; it depends on the kinds of relationships that exist between data items. For `highly interconnected data`, `the document model is awkward, the relational model is acceptable, and graph models (see “Graph-Like Data Models” on page 49) are the most natural`.
+
+### Schema flexibility in the document model
+
+* Most document databases, and the JSON support in relational databases, **do not enforce any schema on the data in documents**. XML support in relational databases usually comes with optional schema validation. No schema means that arbitrary keys and values can be added to a document, and when reading, clients have no guarantees as to what fields the documents may contain.
+
+* Document databases are sometimes called `schemaless`, but that’s misleading, as the code that reads the data usually assumes some kind of structure—i.e., there is an `implicit schema`, but it is not enforced by the database [20]. A more accurate term is `schema-on-read` (the structure of the data is implicit, and only interpreted when the data is read), in contrast with `schema-on-write` (the traditional approach of relational databases, where the schema is explicit and the database ensures all written data con‐ forms to it) [21].
+
+* Schema changes have a bad reputation of being slow and requiring downtime. This reputation is not entirely deserved: `most relational database systems execute the ALTER TABLE statement in a few milliseconds.` MySQL is a notable `exception`—it **copies the entire table on ALTER TABLE, which can mean minutes or even hours of downtime when altering a large table—although various tools exist to work around this limitation [24, 25, 26].**
+
+* ![migration](./images/migration.png)
+
+* The `schema-on-read` approach is advantageous if the items in the collection don’t all have the same structure for some reason (i.e., the data is heterogeneous)—for example, because:
+    * There are many `different types of objects`, and it is `not practical to put each type of object in its own table`.
+    * The `structure of the data is determined by external systems` over which you have no control and which may change at any time.
+
+### Data locality for queries
+
+* A document is usually stored as a `single continuous string`, encoded as `JSON, XML, or a binary variant thereof (such as MongoDB’s BSON)`. If your application often needs to access the entire document (for example, to render it on a web page), there is a `performance advantage to this storage locality`. If data is `split across multiple tables`, like in Figure 2-1, `multiple index lookups are required to retrieve it all`, which may require more disk seeks and take more time.
+    * The locality advantage only applies if you need large parts of the document at the same time. The database typically needs to load the entire document, even if you access only a small portion of it, which can be wasteful on large documents. On updates to a document, the entire document usually needs to be rewritten—only modifications that don’t change the encoded size of a document can easily be performed in place [19]
+
+* It’s worth pointing out that the idea of grouping related data together for locality is not limited to the document model. For example, `Google’s Spanner` database offers the same locality properties in a relational data model, by allowing the schema to declare that a table’s rows should be interleaved (nested) within a parent table [27]. Oracle allows the same, using a feature called multi-table index cluster tables [28]. The column-family concept in the Bigtable data model (used in Cassandra and HBase) has a similar purpose of managing locality [29].
+    * Codd’s original description of the `relational model` [1] actually allowed something quite `similar to JSON documents` within a relational schema. He called it `nonsimple domains`. The idea was that a value in a row doesn’t have to just be a primitive datatype like a number or a string, but could also be a `nested relation (table)`—so you can have an arbitrarily nested tree structure as a value, much like the JSON or XML support that was `added to SQL over 30 years later`.
+
+### Convergence of document and relational databases
+
+* `Most relational database systems (other than MySQL) have supported XML since the mid-2000s`. This includes functions to make local modifications to XML documents and the ability to `index and query inside XML documents`, which allows applications to use data models very similar to what they would do when using a document database.
+    * PostgreSQL since version 9.3 [8], MySQL since version 5.7, and IBM DB2 since ver‐ sion 10.5 [30] also have a similar level of support for `JSON documents`. Given the popularity of JSON for web APIs, it is likely that other relational databases will follow in their footsteps and add JSON support.
+    * On the document database side, `RethinkDB` supports relational-like joins in its query language, and some `MongoDB` drivers automatically resolve database references (effectively performing a `client-side join`, although this is likely to be slower than a join performed in the database since it requires additional network round-trips and is less optimized).
+
+### Query Languages for Data
+
+* When the `relational model` was introduced, it included a new way of querying data: `SQL is a declarative query language`, whereas `IMS` and `CODASYL` queried the database using `imperative code`. What does that mean?
+
+* Many commonly used programming languages are imperative. For example, if you have a list of animal species, you might write something like this to return only the sharks in the list:
+
+* ![imperative](./images/imperative.png) 
+
+* When SQL was defined, it followed the structure of the relational algebra fairly closely:
+
+* ![declarative](./images/sql.png)
+
+* An `imperative language` tells the computer to perform certain operations in a certain order. You can imagine stepping through the code `line by line`, evaluating conditions, updating variables, and deciding whether to go around the loop one more time.
+
+* In a `declarative query language`, like `SQL` or `relational algebra`, you just specify the `pattern of the data you want`—what conditions the results must meet, and how you want the data to be transformed (e.g., sorted, grouped, and aggregated)—**but not how to achieve that goal**. It is up to the database system’s query optimizer to decide which indexes and which join methods to use, and in which order to execute various parts of the query.
+    * A declarative query language is attractive because it is typically more concise and easier to work with than an imperative API. But more importantly, it also hides imple‐ mentation details of the database engine, which makes it possible for the database system to introduce performance improvements without requiring any changes to queries.
+
+* **For example, in the imperative code shown at the beginning of this section, the list of animals appears in a particular order. If the database wants to reclaim unused disk space behind the scenes, it might need to move records around, changing the order in which the animals appear. Can the database do that safely, without breaking queries?**
+
+* **The SQL example doesn’t guarantee any particular ordering, and so it doesn’t mind if the order changes. But if the query is written as imperative code, the database can never be sure whether the code is relying on the ordering or not. The fact that SQL is more limited in functionality gives the database much more room for automatic optimizations.**
+
+* Finally, `declarative languages` often lend themselves to `parallel execution`. Today, `CPUs are getting faster by adding **more cores**, not by running at significantly higher clock speeds than before` [31]. Imperative code is very hard to parallelize across multiple cores and multiple machines, because it specifies instructions that must be performed in a particular order. **Declarative languages have a better chance of getting faster in parallel execution because they specify only the pattern of the results, not the algorithm that is used to determine the results.** The database is free to use a parallel implementation of the query language, if appropriate [32].
+
+### Declarative Queries on the Web
+
+* The `advantages of declarative query languages` are not limited to just databases. To illustrate the point, let’s compare declarative and imperative approaches in a completely different environment: **a web browser.**
+
+* ![dom](./images/dom.png)
+
+* Now say you want the title of the currently selected page to have a blue background, so that it is visually highlighted. `This is easy, using CSS`:
+
+* ![css](./images/css.png) 
+
+* Here the CSS selector `li.selected > p` declares the pattern of elements to which we want to apply the blue style: namely, all `<p>` elements whose direct parent is an `<li>` element with a CSS class of `selected`. The element `<p>Sharks</p>` in the example matches this pattern, but `<p>Whales</p>` does not match because its `<li>` parent lacks `class="selected"`.
+
+* Here, the `XPath` expression `li[@class='selected']/p` is equivalent to the CSS selector `li.selected > p` in the previous example. What `CSS and XSL` have in common is that they are both `declarative languages` for specifying the styling of a document.
+Imagine what life would be like if you had to use an imperative approach. In JavaScript, using the core Document Object Model (DOM) API, the result might look something like this:
+
+* ![imperative_dom](./images/imperative_dom.png)
+
+* This JavaScript imperatively sets the element `<p>Sharks</p>` to have a blue background, but the code is awful. Not only is it much longer and harder to understand than the CSS and XSL equivalents, but it also has some serious problems:
+
+    * If the `selected` class is removed (e.g., because the user clicks a different page), the blue color won’t be removed, even if the code is rerun—and so the item will remain highlighted until the entire page is reloaded. With `CSS`, the browser `automatically` detects when the `li.selected > p` rule no longer applies and removes the blue background as soon as the selected class is removed.
+    * If you want to take advantage of a new API, such as `document.getElementsBy ClassName("selected")` or `even document.evaluate()`—which may improve performance—you have to rewrite the code. On the other hand, browser vendors can improve the performance of `CSS and XPath without breaking compatibility`.
+
+* **In a web browser, using declarative CSS styling is much better than manipulating styles imperatively in JavaScript. Similarly, in databases, declarative query languages like SQL turned out to be much better than imperative query APIs.vi**
+
+### MapReduce Querying
+
+* `MapReduce` is a programming model for processing `large amounts of data` in bulk across `many machines`, popularized by Google [33]. A limited form of `MapReduce` is supported by some `NoSQL` datastores, including `MongoDB and CouchDB`, as a mechanism for performing read-only queries across many documents.
+
+* `MapReduce` is neither a `declarative query` language nor a fully `imperative query API`, but somewhere in between: the logic of the query is expressed with `snippets of code`, which are called repeatedly by the processing framework. It is based on the `map` (also known as `collect`) and `reduce` (also known as `fold` or `inject`) functions that exist in many functional programming languages.
+
+* In PostgreSQL you might express that query like this:
+
+* ![postgres_sql](./images/postgres_sql.png)
+
+* The same can be expressed with `MongoDB’s MapReduce` feature as follows:
+
+* ![mapreduce_mongo](./images/mapreduce_mongo.png)
+
+* ![mapreduce_mongo2](./images/mapreduce_mongo2.png)
+
+* The `map` function would be called once for each document, resulting in `emit("1995-12", 3) and emit("1995-12", 4)`. Subsequently, the `reduce function` would be called with `reduce("1995-12", [3, 4]), returning 7`.
+
+* The `map` and `reduce` functions are somewhat restricted in what they are allowed to do. They must be `pure functions`, which means they `only use the data that is passed to them as input, they cannot perform additional database queries, and they must not have any side effects.` These restrictions allow the database to run the functions any where, in any order, and rerun them on failure. However, they are nevertheless powerful: they can parse strings, call library functions, perform calculations, and more.
+
+* MapReduce is a fairly low-level programming model for distributed execution on a cluster of machines. Higher-level query languages like SQL can be implemented as a pipeline of MapReduce operations (see Chapter 10), but there are also many distributed implementations of SQL that don’t use MapReduce. **Note there is nothing in SQL that constrains it to running on a single machine, and MapReduce doesn’t have a monopoly on distributed query execution.**
+
+* Moreover, a `declarative query language` offers more opportunities for a `query optimizer` to improve the performance of a query. For these reasons, MongoDB 2.2 added support for a `declarative query language called the aggregation pipeline` [9]. In this language, the same shark-counting query looks like this:
+
+![aggregation_pipeline](./images/aggregation_pipeline.png)
+
+* The `aggregation pipeline` language is similar in expressiveness to a `subset of SQL`, but it uses a `JSON-based syntax` rather than SQL’s English-sentence-style syntax; the difference is perhaps a matter of taste. The moral of the story is that a NoSQL system may find itself accidentally reinventing SQL, albeit in disguise.
