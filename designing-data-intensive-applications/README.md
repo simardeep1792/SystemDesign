@@ -362,3 +362,13 @@ Imagine what life would be like if you had to use an imperative approach. In Jav
 ![aggregation_pipeline](./images/aggregation_pipeline.png)
 
 * The `aggregation pipeline` language is similar in expressiveness to a `subset of SQL`, but it uses a `JSON-based syntax` rather than SQL’s English-sentence-style syntax; the difference is perhaps a matter of taste. The moral of the story is that a NoSQL system may find itself accidentally reinventing SQL, albeit in disguise.
+
+### Graph-Like Data Models
+
+* We saw earlier that `many-to-many` relationships are an important distinguishing feature between different data models. If your application has mostly `one-to-many` relationships (`tree-structured data`) or `no relationships` between records, the `document model` is appropriate.
+
+* But what if many-to-many relationships are very common in your data? The relational model can handle simple cases of many-to-many relationships, but as the connections within your data become more complex, **it becomes more natural to start modeling your data as a graph.**
+
+* **A graph consists of two kinds of objects: vertices (also known as nodes or entities) and edges (also known as relationships or arcs).**
+
+* Facebook maintains a `single graph` with many different types of `vertices` and `edges`: vertices represent people, locations, events, checkins, and comments made by users; edges indicate which people are friends with each other, which checkin happened in which location, who commented on which post, who attended which event, and so on [35].
