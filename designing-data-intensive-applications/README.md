@@ -640,3 +640,4 @@ such as `B-trees`.
         * If all keys and values had a fixed size, you could use `binary search` on a `segment file` and avoid the in-memory index entirely. However, they are usually `variable-length` in practice, which makes it difficult to tell where one record ends and the next one starts if you don’t have an index.
     * Since read requests need to scan over several `key-value` pairs in the requested range anyway, it is possible to **group those records into a block and compress it before writing it to disk** (indicated by the shaded area in Figure 3-5). Each entry of the sparse in-memory index then points at the start of a compressed block. **Besides saving disk space, compression also reduces the I/O bandwidth use.**
 
+* Stopped at page 78
