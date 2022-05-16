@@ -726,4 +726,79 @@ such as `B-trees`.
 
     * Even though `B-tree` implementations are generally more mature than `LSM-tree implementations`, `LSM-trees` are also interesting due to their `performance characteristics`. As a rule of thumb, `LSM-trees` are typically **faster for writes**, whereas `B-trees` are thought to be **faster for reads** [23]. **Reads are typically slower on LSM-trees because they have to check several different data structures and SSTables at different stages of compaction**.
 
-Page 84 
+* Advantages of LSM-trees
+    * A B-tree index must **write every piece of data at least twice: once to the write-ahead log, and once to the tree page itself (and perhaps again as pages are split)**. There is also overhead from having to write an **entire page at a time, even if only a few bytes** in that page changed. Some storage engines even overwrite the same page twice in order to avoid ending up with a partially updated page in the event of a power failure [24, 25].
+
+    * Log-structured indexes also rewrite data multiple times due to repeated compaction and merging of SSTables. **This effect—one write to the database resulting in multiple writes to the disk over the course of the database’s lifetime—is known as write amplification**. It is of particular concern on SSDs, which can only overwrite blocks a limi‐ ted number of times before wearing out.
+        * In **write-heavy applications, the performance bottleneck might be the rate at which the database can write to disk.** In this case, write amplification has a direct performance cost: the more that a storage engine writes to disk, the fewer writes per second it can handle within the available disk bandwidth.
+
+    * Moreover, **LSM-trees are typically able to sustain higher write throughput than B-trees**, partly because they sometimes have **lower write amplification** (although this depends on the storage engine configuration and workload), and partly because they sequentially **write compact SSTable files rather than having to overwrite several pages in the tree** [26]. This difference is particularly important on **magnetic hard drives, where sequential writes are much faster** than random writes.
+
+    * **LSM-trees can be compressed better**, and thus often produce **smaller files on disk than B-trees**. B-tree storage engines leave some disk space unused due to **fragmentation**: when a page is split or when a row cannot fit into an existing page, **some space in a page remains unused**. Since LSM-trees are not page-oriented and periodically rewrite **SSTables to remove fragmentation, they have lower storage overheads**, especially when using **leveled compaction** [27].
+        * **On many SSDs, the firmware internally uses a log-structured algorithm to turn random writes into sequential writes on the underlying storage chips**, so the impact of the storage engine’s write pattern is less pronounced [19]. However, lower write amplification and reduced fragmentation are still advantageous on SSDs: **representing data more compactly allows more read and write requests within the available I/O bandwidth.**
+
+* Downsides of LSM-trees
+
+    * A downside of `log-structured storage` is that the **compaction process can sometimes interfere with the performance of ongoing reads and writes**. Even though storage engines try to perform compaction incrementally and without affecting concurrent access, disks have limited resources, **so it can easily happen that a request needs to wait while the disk finishes an expensive compaction operation**. The **impact on throughput and average response time is usually small**, but at higher percentiles (see “Describing Performance” on page 13) the **response time of queries to log-structured storage engines can sometimes be quite high (p99)**, and **B-trees can be more predictable** [28].
+
+    * Another issue with compaction arises at **high write throughput**: the disk’s finite write bandwidth needs to be shared between the **initial write (logging and flushing a memtable to disk) and the compaction threads running in the background**. When writing to an empty database, the full disk bandwidth can be used for the initial write, but **the bigger the database gets, the more disk bandwidth is required for compaction.**
+
+    * **If write throughput is high and compaction is not configured carefully, it can happen that compaction cannot keep up with the rate of incoming writes.** In this case, the number of unmerged segments on disk keeps growing until you run out of disk space, and **reads also slow down because they need to check more segment files**. Typically, **SSTable-based storage engines do not throttle the rate of incoming writes, even if compaction cannot keep up, so you need explicit monitoring to detect this situation** [29, 30].
+
+    * An **advantage of B-trees is that each key exists in exactly one place in the index, whereas a log-structured storage engine may have multiple copies of the same key in different segments**. This aspect makes **B-trees** attractive in databases that want to offer **strong transactional semantics**: in many **relational databases, transaction isolation is implemented using locks on ranges of keys**, and in a **B-tree index, those locks can be directly attached to the tree** [5]. In Chapter 7 we will discuss this point in more detail.
+
+    * **B-trees are very ingrained in the architecture of databases and provide consistently good performance for many workloads, so it’s unlikely that they will go away anytime soon.** In new datastores, **log-structured indexes are becoming increasingly popular**. There is no quick and easy rule for determining which type of storage engine is better for your use case, so it is worth testing empirically.
+
+* Other Indexing Structures
+
+    * So far we have only discussed **key-value indexes**, which are **like a primary key index in the relational model**. A **primary key uniquely identifies one row in a relational table, or one document in a document database, or one vertex in a graph database**. Other records in the database can refer to that row/document/vertex by its primary key (or ID), and the index is used to resolve such references.
+
+    * It is also very common to have **secondary indexes**. In relational databases, you can create **several secondary indexes on the same table using the CREATE INDEX command**, and they are often **crucial for performing joins** efficiently. For example, in Figure 2-1 in Chapter 2 you would most likely have a secondary index on the `user_id` columns so that you can find all the rows belonging to the same user in each of the tables.
+
+    * A **secondary index** can easily be constructed from a **key-value index**. **The main difference is that keys are not unique; i.e., there might be many rows (documents, vertices) with the same key**. This can be solved in two ways: either by **making each value in the index a list of matching row identifiers (like a postings list in a full-text index) or by making each key unique by appending a row identifier to it.** Either way, both **B-trees and log-structured indexes can be used as secondary indexes**.
+
+* Storing values within the index
+
+    * The key in an index is the thing that queries search for, **but the value can be one of two things: it could be the actual row (document, vertex) in question, or it could be a reference to the row stored elsewhere**. In the latter case, the place where rows are stored is known as **a heap file**, and it stores data in no particular order **(it may be append-only, or it may keep track of deleted rows in order to overwrite them with new data later)**. **The heap file approach is common because it avoids duplicating data when multiple secondary indexes are present: each index just references a location in the heap file, and the actual data is kept in one place.**
+
+    * When **updating a value without changing the key, the heap file approach can be quite efficient: the record can be overwritten in place, provided that the new value is not larger than the old value. The situation is more complicated if the new value is larger, as it probably needs to be moved to a new location in the heap where there is enough space. In that case, either all indexes need to be updated to point at the new heap location of the record, or a forwarding pointer is left behind in the old heap location** [5].
+
+    * In some situations, the **extra hop from the index to the heap file is too much of a performance penalty for reads**, so it can be desirable to store the indexed row directly within an index. This is known as a **clustered index**. For example, in MySQL’s **InnoDB storage engine**, the **primary key of a table is always a clustered index**, and **secondary indexes refer to the primary key (rather than a heap file location)** [31]. In SQL Server, you can specify one **clustered index per table** [32].
+
+    * A compromise between a **clustered index (storing all row data within the index)** and a **nonclustered index (storing only references to the data within the index)** is known as a **covering index** or **index with included columns**, which stores some of a table’s columns within the index [33]. **This allows some queries to be answered by using the index alone (in which case, the index is said to cover the query)** [32].
+
+    * As with any kind of duplication of data, **clustered and covering indexes can speed up reads, but they require additional storage and can add overhead on writes.** Databases also need to go to **additional effort to enforce transactional guarantees**, because applications should not see inconsistencies due to the duplication.
+
+* Multi-column indexes
+
+    * The indexes discussed so far only map a **single key to a value**. That is not sufficient if we need to **query multiple columns of a table** (or multiple fields in a document) simultaneously.
+
+    * The most common type of **multi-column index is called a concatenated index**, which simply **combines several fields into one key by appending one column to another (the index definition specifies in which order the fields are concatenated)**. This is like an old-fashioned paper phone book, which provides an index from (lastname, first name) to phone number. Due to the sort order, **the index can be used to find all the people with a particular last name, or all the people with a particular lastname-firstname combination. However, the index is useless if you want to find all the people with a particular first name.**
+
+    * **Multi-dimensional indexes are a more general way of querying several columns at once, which is particularly important for geospatial data**. For example, a restaurant- search website may have a database containing the latitude and longitude of each res‐ taurant. When a user is looking at the restaurants on a map, the website needs to search for all the restaurants within the rectangular map area that the user is currently viewing. This requires a two-dimensional range query like the following:
+
+    * ![multi-dimensional-index](./images/multi-dimensional-index.png)
+
+    * A standard **B-tree or LSM-tree index is not able to answer that kind of query efficiently**: it can give you either all the restaurants in a range of `latitudes` (but at any lon‐ gitude), or all the restaurants in a range of `longitudes` (but anywhere between the North and South poles), but not both simultaneously.
+
+    * One option is to **translate a two-dimensional location into a single number using a space-filling curve, and then to use a regular B-tree index** [34]. More commonly, **specialized spatial indexes such as R-trees are used**. For example, PostGIS implements geospatial indexes as **R-trees using PostgreSQL’s Generalized Search Tree indexing** facility [35]. We don’t have space to describe R-trees in detail here, but there is plenty of literature on them.
+        * `R-trees` (also Quad-trees) are tree data structures used for spatial access methods, i.e., for indexing **multi-dimensional information such as geographical coordinates**, rectangles or polygons. The R-tree was proposed by Antonin Guttman in 1984 and has found significant use in both theoretical and applied contexts.
+    
+    * An interesting idea is that `multi-dimensional` indexes **are not just for geographic locations**. For example, on an ecommerce website you could use a `three-dimensional index on the dimensions (red, green, blue)` to search for products in a certain range of colors, or in a database of weather observations you could have a `two-dimensional index on (date, temperature)` in order to efficiently search for all the observations during the year 2013 where the temperature was between 25 and 30°C. **With a one dimensional index, you would have to either scan over all the records from 2013 (regardless of temperature) and then filter them by temperature**, or vice versa. **A 2D index could narrow down by timestamp and temperature simultaneously. This tech‐ nique is used by HyperDex** [36].
+        * The main techniques `HyperDex` uses are `hyperspace hashing` and `value-dependent chaining`. HyperDex has a commercial extension called HyperDex Warp, which supports ACID transactions involving multiple objects. If not specified, "HyperDex" refers to the basic version without warp.
+    
+* Full-text search and fuzzy indexes
+
+    * All the indexes discussed so far assume that you have exact data and allow you to query for exact values of a key, or a range of values of a key with a sort order. What they don’t allow you to do is **search for similar keys, such as misspelled words. Such fuzzy querying requires different techniques.**
+
+    * For example, full-text search engines commonly allow a search for one word to be expanded to include synonyms of the word, to ignore grammatical variations of words, and to search for occurrences of words near each other in the same document, and support various other features that depend on linguistic analysis of the text. To cope with typos in documents or queries, **Lucene is able to search text for words within a certain edit distance (an edit distance of 1 means that one letter has been added, removed, or replaced)** [37]
+
+    * As mentioned in “Making an LSM-tree out of SSTables” on page 78, **Lucene uses a SSTable-like structure for its term dictionary**. **This structure requires a small in-memory index that tells queries at which offset in the sorted file they need to look for a key**. In LevelDB, this in-memory index is a sparse collection of some of the keys, but in Lucene, the in-memory index is a finite state automaton over the characters in the keys, **similar to a trie** [38]. This automaton can be transformed into a Levenshtein automaton, which supports efficient search for words within a given edit distance [39].
+
+* Keeping everything in memory
+
+    * The data structures discussed so far in this chapter have all been answers to the **limitations of disks**. Compared to main memory, disks are awkward to deal with. With both **magnetic disks and SSDs, data on disk needs to be laid out carefully if you want good performance on reads and writes.** However, we tolerate this awkwardness because disks have two significant advantages: they are durable (their contents are not lost if the power is turned off), and they have a lower cost per gigabyte than RAM.
+
+    * As RAM becomes cheaper, the cost-per-gigabyte argument is eroded. Many datasets are simply not that big, so it’s quite **feasible to keep them entirely in memory, potentially distributed across several machines**. This has led to the development of **inmemory databases**.
+
+page 89
