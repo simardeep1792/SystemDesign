@@ -801,4 +801,74 @@ such as `B-trees`.
 
     * As RAM becomes cheaper, the cost-per-gigabyte argument is eroded. Many datasets are simply not that big, so it’s quite **feasible to keep them entirely in memory, potentially distributed across several machines**. This has led to the development of **inmemory databases**.
 
-page 89
+    * Some **in-memory key-value stores, such as Memcached, are intended for caching use only, where it’s acceptable for data to be lost if a machine is restarted**. But other **in-memory databases aim for durability, which can be achieved with special hardware (such as battery-powered RAM), by writing a log of changes to disk, by writing periodic snapshots to disk, or by replicating the in-memory state to other machines**.
+
+    * When an in-memory database is restarted, it needs to **reload its state, either from disk or over the network from a replica (unless special hardware is used).** Despite writing to disk, it’s still an in-memory database, because the disk is merely used as an append-only log for durability, and reads are served entirely from memory. Writing to disk also has operational advantages: files on disk can easily be backed up, inspected, and analyzed by external utilities.
+
+    * Products such as **VoltDB, MemSQL, and Oracle TimesTen are in-memory databases with a relational model**, and the vendors claim that they can offer big performance improvements by removing all the overheads associated with managing on-disk data structures [41, 42]. **RAMCloud is an open source, in-memory key-value store with durability (using a log-structured approach for the data in memory as well as the data on disk) [43]. Redis and Couchbase provide weak durability by writing to disk asynchronously.**
+
+* **Counterintuitively, the performance advantage of in-memory databases is not due to the fact that they don’t need to read from disk.** Even a disk-based storage engine may never need to read from disk if you have enough memory, because the operating system caches recently used disk blocks in memory anyway. **Rather, they can be faster because they can avoid the overheads of encoding in-memory data structures in a form that can be written to disk [44].**
+
+* Besides performance, another interesting area for **in-memory databases is providing data models that are difficult to implement with disk-based indexes**. For example, **Redis offers a database-like interface to various data structures such as priority queues and sets**. Because it keeps all data in memory, its implementation is comparatively simple.
+
+* Recent research indicates that an **in-memory database architecture could be extended to support datasets larger than the available memory, without bringing back the overheads of a disk-centric architecture** [45]. The **so-called anti-caching approach works by evicting the least recently used data from memory to disk when there is not enough memory, and loading it back into memory when it is accessed again in the future**. This is **similar to what operating systems do with virtual memory and swap files, but the database can manage memory more efficiently than the OS**, as it can work at the granularity of individual records rather than entire memory pages. **This approach still requires indexes to fit entirely in memory, though (like the Bitcask example at the beginning of the chapter).**
+
+* Further changes to storage engine design will probably be needed if **non-volatile memory (NVM)** technologies become more widely adopted [46]. At present, this is a new area of research, but it is worth keeping an eye on in the future.
+
+### Transaction Processing or Analytics?
+
+* In the early days of business data processing, a write to the database typically corresponded to a commercial transaction taking place: making a sale, placing an order with a supplier, paying an employee’s salary, etc. **As databases expanded into areas that didn’t involve money changing hands, the term transaction nevertheless stuck, referring to a group of reads and writes that form a logical unit.**
+
+* An application typically looks up a small number of records by some key, using an index. Records are inserted or updated based on the user’s input. Because these applications are interactive, the access pattern became known as **online transaction processing (OLTP).**
+
+* **However, databases also started being increasingly used for data analytics, which has very different access patterns. Usually an analytic query needs to scan over a huge number of records, only reading a few columns per record, and calculates aggregate statistics (such as count, sum, or average) rather than returning the raw data to the user.**
+    * What was the total revenue of each of our stores in January?
+    * How many more bananas than usual did we sell during our latest promotion?
+
+* **In order to differentiate this pattern of using databases from transaction processing, it has been called online analytic processing (OLAP)**
+
+* ![olap_vs_oltp](./images/olap_vs_oltp.png)
+
+* At first, the same databases were used for both transaction processing and analytic queries. **SQL turned out to be quite flexible in this regard: it works well for OLTP type queries as well as OLAP type queries.** Nevertheless, in the late 1980s and early 1990s, there was a trend for companies to stop using their OLTP systems for analytics purposes, and to run the analytics on a **separate database instead. This separate database was called a data warehouse.**
+
+* Data Warehousing
+
+* An enterprise may have dozens of different transaction processing systems: systems powering the customer-facing website, controlling point of sale (checkout) systems in physical stores, tracking inventory in warehouses, planning routes for vehicles, managing suppliers, administering employees, etc. Each of these systems is complex and needs a team of people to maintain it, so the systems end up operating mostly auton‐ omously from each other.
+
+* These **OLTP systems are usually expected to be highly available and to process transactions with low latency, since they are often critical to the operation of the business**. Database administrators therefore closely guard their OLTP databases. They are usually reluctant to let business analysts run ad hoc analytic queries on an OLTP data‐ base, since those queries are often expensive, scanning large parts of the dataset, which can harm the performance of concurrently executing transactions.
+
+* A **data warehouse, by contrast, is a separate database that analysts can query to their hearts’ content, without affecting OLTP operations** [48]. The data warehouse contains a **read-only copy of the data in all the various OLTP systems in the company**. Data is extracted from OLTP databases (using either a periodic data dump or a con‐ tinuous stream of updates), transformed into an analysis-friendly schema, cleaned up, and then loaded into the data warehouse. **This process of getting data into the warehouse is known as Extract–Transform–Load (ETL) and is illustrated in Figure 3-8.**
+
+* ![olap](./images/olap.png)
+
+* Data warehouses now exist in almost all large enterprises, but in small companies they are almost unheard of. This is probably because most small companies don’t have so many different OLTP systems, and **most small companies have a small amount of data—small enough that it can be queried in a conventional SQL database**, or even analyzed in a spreadsheet. In a large company, a lot of heavy lifting is required to do something that is simple in a small company.
+
+* **A big advantage of using a separate data warehouse, rather than querying OLTP systems directly for analytics, is that the data warehouse can be optimized for analytic access patterns. It turns out that the indexing algorithms discussed in the first half of this chapter work well for OLTP, but are not very good at answering analytic queries.**
+
+### The divergence between OLTP databases and data warehouses
+
+* The **data model of a data warehouse is most commonly relational, because SQL is generally a good fit for analytic queries**. There are many graphical data analysis tools that generate SQL queries, visualize the results, and allow analysts to explore the data (through operations such as drill-down and slicing and dicing).
+
+* On the surface, a data warehouse and a relational **OLTP database look similar, because they both have a SQL query interface**. However, the **internals of the systems can look quite different**, because they are optimized for very different query patterns. **Many database vendors now focus on supporting either transaction processing or analytics workloads, but not both.**
+    * Some databases, such as **Microsoft SQL Server and SAP HANA, have support for transaction processing and data warehousing in the same product**. However, they are increasingly becoming two separate storage and query engines, which happen to be accessible through a common SQL interface [49, 50, 51].
+
+* Data warehouse vendors such as **Teradata, Vertica, SAP HANA, and ParAccel** typically sell their systems under expensive commercial licenses. **Amazon RedShift** is a hosted version of **ParAccel**. More recently, a plethora of open source **SQL-on- Hadoop projects have emerged**; they are young but aiming to compete with commercial data warehouse systems. These include **Apache Hive, Spark SQL, Cloudera Impala, Facebook Presto, Apache Tajo, and Apache Drill** [52, 53]. Some of them are based on ideas from Google’s Dremel [54].
+    * Redshift differs from Amazon's other hosted database offering, **Amazon RDS, in its ability to handle analytic workloads on big data data sets stored by a column-oriented DBMS principle. Redshift allows up to 16 petabytes of data on a cluster[4] compared to Amazon RDS Aurora's maximum size of 128 tebibytes.[5]**
+    * Amazon Redshift is based on an older version of PostgreSQL 8.0.2, and Redshift has made changes to that version.[6][7] An initial preview beta was released in November 2012[8] and a full release was made available on February 15, 2013. The service can handle connections from most other applications using ODBC and JDBC connections.[9] According to Cloud Data Warehouse report published by Forrester in Q4 2018, Amazon Redshift has the largest Cloud data warehouse deployments, with more than 6,500 deployments.[10]
+    * Redshift uses parallel-processing and compression to decrease command execution time.[11] This allows Redshift to perform operations on billions of rows at once.[12] This also makes Redshift useful for storing and analyzing large quantities of data from logs or live feeds through a source such as Amazon Kinesis Data Firehose.[12]
+
+### Stars and Snowflakes: Schemas for Analytics
+
+* As explored in Chapter 2, a wide range of different data models are used in the realm of transaction processing, depending on the needs of the application. On the other hand, in analytics, there is much less diversity of data models. **Many data warehouses are used in a fairly formulaic style, known as a star schema (also known as dimensional modeling [55]).**
+
+* The example schema in Figure 3-9 shows a data warehouse that might be found at a grocery retailer. At the center of the schema is a so-called fact table (in this example, it is called fact_sales). Each row of the fact table represents an event that occurred at a particular time (here, each row represents a customer’s purchase of a product). If we were analyzing website traffic rather than retail sales, each row might represent a page view or a click by a user.
+
+* ![datawarehouse](./images/datawarehouse.png)
+
+* **Usually, facts are captured as individual events, because this allows maximum flexi‐ bility of analysis later. However, this means that the fact table can become extremely large.** A big enterprise like Apple, Walmart, or eBay may have tens of petabytes of transaction history in its data warehouse, most of which is in fact tables [56].
+
+* Some of the columns in the fact table are attributes, such as the price at which the product was sold and the cost of buying it from the supplier (allowing the profit mar‐ gin to be calculated). **Other columns in the fact table are foreign key references to other tables, called dimension tables.** As each row in the fact table represents an event, **the dimensions represent the who, what, where, when, how, and why of the event.**
+
+* For example, in Figure 3-9, one of the dimensions is the product that was sold. Each row in the `dim_product` table represents one type of product that is for sale, including its `stock-keeping unit (SKU)`, description, brand name, category, fat content, package size, etc. Each row in the `fact_sales` table uses a `foreign key` to indicate which product was sold in that particular transaction. (For simplicity, **if the customer buys several different products at once, they are represented as separate rows in the fact table.**)
+
+* Page 95
