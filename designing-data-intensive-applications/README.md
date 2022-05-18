@@ -871,4 +871,72 @@ such as `B-trees`.
 
 * For example, in Figure 3-9, one of the dimensions is the product that was sold. Each row in the `dim_product` table represents one type of product that is for sale, including its `stock-keeping unit (SKU)`, description, brand name, category, fat content, package size, etc. Each row in the `fact_sales` table uses a `foreign key` to indicate which product was sold in that particular transaction. (For simplicity, **if the customer buys several different products at once, they are represented as separate rows in the fact table.**)
 
-* Page 95
+* Even date and time are often represented using dimension tables, because this allows additional information about dates (such as public holidays) to be encoded, allowing queries to differentiate between sales on holidays and non-holidays.
+
+* **The name “star schema” comes from the fact that when the table relationships are visualized, the fact table is in the middle, surrounded by its dimension tables; the connections to these tables are like the rays of a star.**
+
+* A variation of this template is known as the `snowflake schema`, where **dimensions are further broken down into subdimensions**. For example, there could be separate tables for brands and product categories, **and each row in the dim_product table could reference the brand and category as foreign keys, rather than storing them as strings in the dim_product table**. `Snowflake` schemas are **more normalized** than star schemas, but `star schemas` are often preferred because they are simpler for analysts to work with [55].
+
+* In a typical `data warehouse`, tables are often **very wide: fact tables often have over 100 columns, sometimes several hundred** [51]. `Dimension tables can also be very wide`, as they include all the metadata that may be relevant for analysis—for example, the `dim_store` table may include details of which services are offered at each store, whether it has an in-store bakery, the square footage, the date when the store was first opened, when it was last remodeled, how far it is from the nearest highway, etc.
+
+### Column-Oriented Storage
+
+* If you have **trillions of rows and petabytes of data in your fact tables, storing and querying them efficiently becomes a challenging problem**. Dimension tables are usually much smaller (millions of rows), so in this section we will concentrate primarily on **storage of facts.**
+
+* Although `fact tables` are often over `100 columns wide`, a typical data warehouse query only accesses 4 or 5 of them at one time **("SELECT *" queries are rarely needed for analytics)** [51]. Take the query in Example 3-1: it accesses a large number of rows (every occurrence of someone buying fruit or candy during the 2013 calendar year), but it **only needs to access three columns of the fact_sales table**: `date_key, product_sk, and quantity`. The query ignores all other columns.
+
+* ![datawarehouse_query](./images/datawarehouse_query.png)
+
+* **How can we execute this query efficiently?**
+
+* In most OLTP databases, storage is laid out in a row-oriented fashion: all the values from one row of a table are stored next to each other. Document databases are simi‐ lar: an entire document is typically stored as one contiguous sequence of bytes. You can see this in the CSV example of Figure 3-1.
+
+* In order to process a query like Example 3-1, you may have indexes on `fact_sales.date_key` and/or `fact_sales.product_sk` that tell the storage engine where to find all the sales for a particular `date` or for a `particular product`. **But then, a row-oriented storage engine still needs to load all of those rows (each consisting of over 100 attributes) from disk into memory, parse them, and filter out those that don’t meet the required conditions.** That can take a long time.
+
+* The idea behind `column-oriented storage` is simple: **don’t store all the values from one row together**, but **store all the values from each column together instead**. **If each column is stored in a separate file, a query only needs to read and parse those columns that are used in that query, which can save a lot of work.** This principle is illustrated in Figure 3-10.
+
+* `Column storage is easiest to understand in a relational data model`, but it applies equally to `nonrelational data`. For example, `Parquet` [57] is a `columnar storage format` that supports a `document data model`, based on `Google’s Dremel` [54].
+
+* ![columnar_db](./images/columnar_db.png)
+
+* The `column-oriented storage layout` relies on each `column file` containing the `rows in the same order`. Thus, **if you need to reassemble an entire row, you can take the 23rd entry from each of the individual column files and put them together to form the 23rd row of the table.**
+
+### Column Compression
+
+* Besides only loading those columns from disk that are required for a query, **we can further reduce the demands on disk throughput by compressing data**. Fortunately, `column-oriented` storage often lends itself very well to compression.
+
+* Take a look at the sequences of values for each column in Figure 3-10: they often look quite repetitive, which is a good sign for compression. Depending on the data in the column, **different compression techniques can be used. One technique that is particularly effective in data warehouses is bitmap encoding, illustrated in Figure 3-11.**
+
+* ![columnar_bitmap_compression](./images/columnar_bitmap_compression.png)
+
+* **Often, the number of distinct values in a column is small compared to the number of rows** (for example, a retailer may have billions of sales transactions, `but only 100,000 distinct products`). We can now take a column with n distinct values and turn it into `n separate bitmaps`: `one bitmap for each distinct value`, **with one bit for each row. The bit is 1 if the row has that value, and 0 if not.**
+
+* **Bitmap** indexes have traditionally been considered to work well for **low-cardinality columns**, which have a modest number of distinct values, either absolutely, or relative to the number of records that contain the data. **The extreme case of low cardinality is Boolean data (e.g., does a resident in a city have internet access?), which has two values, True and False.** Bitmap indexes use `bit arrays` (commonly called bitmaps) and answer queries by performing bitwise logical operations on these bitmaps. Bitmap indexes have a significant space and performance advantage over other structures for query of such data. **Their drawback is they are less efficient than the traditional B-tree indexes for columns whose data is frequently updated**: consequently, they are more **often employed in read-only systems that are specialized for fast query - e.g., data warehouses**, and `generally unsuitable for online transaction processing applications`.
+
+* If `n` is `very small` (for example, a country column may have approximately 200 dis tinct values), those bitmaps can be stored with `one bit per row`. But if `n` is bigger, there will be a lot of `zeros in most of the bitmaps` (we say that they are sparse). In that case, the `bitmaps` can additionally be run-length encoded, as shown at the bottom of Figure 3-11. This can make the encoding of a column remarkably compact.
+
+* Bitmap indexes such as these are very well suited for the kinds of queries that are common in a data warehouse. For example:
+
+    * `WHERE product_sk IN (30, 68, 69):`
+
+    * Load the three bitmaps for `product_sk = 30, product_sk = 68, and product_sk = 69`, and calculate the `bitwise OR of the three bitmaps`, which can be done very efficiently.
+
+    * `WHERE product_sk = 31 AND store_sk = 3:`
+
+    * Load the bitmaps for `product_sk = 31 and store_sk = 3`, and calculate the `bit wise AND`. **This works because the columns contain the rows in the same order, so the kth bit in one column’s bitmap corresponds to the same row as the kth bit in another column’s bitmap.**
+
+### Column-oriented storage and column families
+
+* `Cassandra` and `HBase` have a concept of `column families`, which they inherited from `Bigtable` [9]. However, it is very misleading to call them `column-oriented`: within each `column family`, **they store all columns from a row together, along with a row key, and they do not use column compression**. Thus, the `Bigtable` model is still mostly `row-oriented`.
+
+### Memory bandwidth and vectorized processing
+
+* For `data warehouse` queries that need to scan `over millions of rows`, a big bottleneck is the `bandwidth for getting data from disk into memory`. However, that is not the only bottleneck. Developers of analytical databases also worry about `efficiently using the bandwidth from main memory into the CPU cache`, avoiding branch mispredictions and bubbles in the CPU instruction processing pipeline, and making use of single-instruction-multi-data (SIMD) instructions in modern CPUs [59, 60].
+
+* **Besides reducing the volume of data that needs to be loaded from disk, columnoriented storage layouts are also good for making efficient use of CPU cycles**. For example, the query engine can `take a chunk of compressed column data that fits comfortably in the CPU’s L1 cache and iterate through it in a tight loop` (that is, with no function calls). **A CPU can execute such a loop much faster than code that requires a lot of function calls and conditions for each record that is processed**. `Column compression allows more rows from a column to fit in the same amount of L1 cache`. Operators, such as the bitwise AND and OR described previously, can be designed to operate on such chunks of compressed column data directly. This technique is known as vectorized processing [58, 49].
+
+### Sort Order in Column Storage
+
+* In a `column store, it doesn’t necessarily matter in which order the rows are stored`. It’s easiest to store them in the order in which they were inserted, **since then inserting a new row just means appending to each of the column files.** However, we can choose to impose an order, like we did with `SSTables` previously, and use that as an indexing mechanism.
+
+* page 100
